@@ -19,3 +19,4 @@ abstract interface class IAuthRepository {
 
   Future<AppResult<void>> logOut();
 }
+

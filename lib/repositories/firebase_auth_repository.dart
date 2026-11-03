@@ -76,3 +76,4 @@ class FirebaseAuthRepository implements IAuthRepository {
     };
   }
 }
+

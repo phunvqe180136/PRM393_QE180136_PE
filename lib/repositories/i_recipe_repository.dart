@@ -20,3 +20,4 @@ abstract interface class IRecipeRepository {
     String? currentDocId,
   });
 }
+
