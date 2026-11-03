@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../models/recipe_model.dart';
+import '../core/constants/app_constants.dart';
+import '../core/utils/validators.dart';
+import '../models/recipe.dart';
 import '../services/recipe_service.dart';
 
+/// Modal Bottom Sheet for adding a new recipe
+/// Author: Nguyen Vinh Phu (QE180136)
 class AddRecipeBottomSheet extends StatefulWidget {
-  final RecipeModel? recipeToEdit; // Nếu != null thì là chế độ Chỉnh sửa
-
-  const AddRecipeBottomSheet({super.key, this.recipeToEdit});
+  const AddRecipeBottomSheet({super.key});
 
   @override
   State<AddRecipeBottomSheet> createState() => _AddRecipeBottomSheetState();
@@ -16,38 +18,17 @@ class _AddRecipeBottomSheetState extends State<AddRecipeBottomSheet> {
   final _formKey = GlobalKey<FormState>();
   final _recipeService = RecipeService();
 
-  late final TextEditingController _nameController;
-  late final TextEditingController _cookTimeController;
-  late final TextEditingController _servingsController;
-  late final TextEditingController _notesController;
-
-  String? _selectedCategory;
-  String? _selectedDifficulty;
-
-  AutovalidateMode _autovalidateMode = AutovalidateMode.disabled;
+  AutovalidateMode _validationMode = AutovalidateMode.disabled;
   bool _isSubmitting = false;
-  String? _errorMessage;
+  String? _submissionErrorMessage;
 
-  final List<String> _categoryOptions = ['Choose category', 'Breakfast', 'Lunch', 'Dinner', 'Dessert'];
-  final List<String> _difficultyOptions = ['Choose difficulty', 'Easy', 'Medium', 'Hard'];
+  final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _cookTimeController = TextEditingController();
+  final TextEditingController _servingsController = TextEditingController();
+  final TextEditingController _notesController = TextEditingController();
 
-  @override
-  void initState() {
-    super.initState();
-    final recipe = widget.recipeToEdit;
-    _nameController = TextEditingController(text: recipe?.name ?? '');
-    _cookTimeController = TextEditingController(text: recipe?.cookTime != null ? recipe!.cookTime.toString() : '');
-    _servingsController = TextEditingController(text: recipe?.servings != null ? recipe!.servings.toString() : '');
-    _notesController = TextEditingController(text: recipe?.notes ?? '');
-
-    _selectedCategory = (recipe != null && _categoryOptions.contains(recipe.category))
-        ? recipe.category
-        : 'Choose category';
-
-    _selectedDifficulty = (recipe != null && _difficultyOptions.contains(recipe.difficulty))
-        ? recipe.difficulty
-        : 'Choose difficulty';
-  }
+  String _chosenCategory = RecipeAppConstants.defaultCategoryPrompt;
+  String _chosenDifficulty = RecipeAppConstants.defaultDifficultyPrompt;
 
   @override
   void dispose() {
@@ -58,67 +39,69 @@ class _AddRecipeBottomSheetState extends State<AddRecipeBottomSheet> {
     super.dispose();
   }
 
-  Future<void> _submitForm() async {
+  Future<void> _submitNewRecipe() async {
     setState(() {
-      _autovalidateMode = AutovalidateMode.always;
-      _errorMessage = null;
+      _validationMode = AutovalidateMode.onUserInteraction;
+      _submissionErrorMessage = null;
     });
 
-    if (!_formKey.currentState!.validate()) return;
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
 
     final currentUser = FirebaseAuth.instance.currentUser;
-    if (currentUser == null) return;
+    if (currentUser == null) {
+      setState(() {
+        _submissionErrorMessage = 'User is not logged in. Please log in first.';
+      });
+      return;
+    }
 
     setState(() {
       _isSubmitting = true;
     });
 
-    final cookTimeVal = int.parse(_cookTimeController.text.trim());
-    final servingsVal = _servingsController.text.trim().isNotEmpty
-        ? int.tryParse(_servingsController.text.trim())
-        : null;
-
-    final newRecipe = RecipeModel(
-      id: widget.recipeToEdit?.id ?? '',
-      userId: currentUser.uid,
-      name: _nameController.text.trim(),
-      category: _selectedCategory!,
-      difficulty: _selectedDifficulty!,
-      cookTime: cookTimeVal,
-      servings: servingsVal,
-      favorite: widget.recipeToEdit?.favorite ?? false,
-      notes: _notesController.text.trim().isEmpty ? null : _notesController.text.trim(),
-      createdAt: widget.recipeToEdit?.createdAt ?? DateTime.now(),
-    );
-
     try {
-      if (widget.recipeToEdit == null) {
-        await _recipeService.addRecipe(newRecipe);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Recipe added'),
-              backgroundColor: Colors.green,
-            ),
-          );
-          Navigator.pop(context);
-        }
-      } else {
-        await _recipeService.updateRecipe(newRecipe);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Recipe updated'),
-              backgroundColor: Colors.green,
-            ),
-          );
-          Navigator.pop(context, newRecipe);
-        }
+      final int parsedCookTime = int.parse(_cookTimeController.text.trim());
+      final int? parsedServings = _servingsController.text.trim().isNotEmpty
+          ? int.parse(_servingsController.text.trim())
+          : null;
+      final String? parsedNotes = _notesController.text.trim().isNotEmpty
+          ? _notesController.text.trim()
+          : null;
+
+      final newRecipe = Recipe(
+        id: '',
+        userId: currentUser.uid,
+        name: _nameController.text.trim(),
+        category: _chosenCategory,
+        difficulty: _chosenDifficulty,
+        cookTime: parsedCookTime,
+        servings: parsedServings,
+        favorite: false,
+        notes: parsedNotes,
+        createdAt: DateTime.now(),
+      );
+
+      await _recipeService.addRecipe(newRecipe);
+
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Recipe added'),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
       }
-    } catch (e) {
+    } catch (error) {
+      setState(() {
+        _submissionErrorMessage = error.toString().replaceFirst(RegExp(r'^\[.*?\]\s*'), '');
+      });
+    } finally {
       if (mounted) {
         setState(() {
-          _errorMessage = e.toString().replaceFirst('Exception: ', '');
           _isSubmitting = false;
         });
       }
@@ -129,187 +112,207 @@ class _AddRecipeBottomSheetState extends State<AddRecipeBottomSheet> {
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
 
-    return Container(
-      padding: EdgeInsets.only(
-        left: 20,
-        right: 20,
-        top: 20,
-        bottom: bottomInset + 20,
-      ),
-      constraints: BoxConstraints(
-        maxHeight: MediaQuery.of(context).size.height * 0.85,
-      ),
-      child: SingleChildScrollView(
-        child: Form(
-          key: _formKey,
-          autovalidateMode: _autovalidateMode,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                widget.recipeToEdit == null ? 'Add a recipe' : 'Edit recipe',
-                style: const TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.deepOrange,
+    return Padding(
+      padding: EdgeInsets.only(bottom: bottomInset),
+      child: Container(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.85,
+        ),
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+        child: SingleChildScrollView(
+          child: Form(
+            key: _formKey,
+            autovalidateMode: _validationMode,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Top Header Row
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Add Recipe',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.deepOrange,
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
                 ),
-              ),
-              const SizedBox(height: 16),
-              // Name Field
-              TextFormField(
-                controller: _nameController,
-                decoration: const InputDecoration(
-                  labelText: 'Name *',
-                  border: OutlineInputBorder(),
-                ),
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return 'Name is required';
-                  }
-                  if (value.trim().length > 80) {
-                    return 'Name must be at most 80 characters';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 12),
-              // Category Dropdown
-              DropdownButtonFormField<String>(
-                initialValue: _selectedCategory,
-                decoration: const InputDecoration(
-                  labelText: 'Category *',
-                  border: OutlineInputBorder(),
-                ),
-                items: _categoryOptions.map((category) {
-                  return DropdownMenuItem<String>(
-                    value: category,
-                    child: Text(category),
-                  );
-                }).toList(),
-                onChanged: (val) {
-                  setState(() {
-                    _selectedCategory = val;
-                  });
-                },
-                validator: (value) {
-                  if (value == null || value == 'Choose category') {
-                    return 'Please choose a category';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 12),
-              // Difficulty Dropdown
-              DropdownButtonFormField<String>(
-                initialValue: _selectedDifficulty,
-                decoration: const InputDecoration(
-                  labelText: 'Difficulty *',
-                  border: OutlineInputBorder(),
-                ),
-                items: _difficultyOptions.map((difficulty) {
-                  return DropdownMenuItem<String>(
-                    value: difficulty,
-                    child: Text(difficulty),
-                  );
-                }).toList(),
-                onChanged: (val) {
-                  setState(() {
-                    _selectedDifficulty = val;
-                  });
-                },
-                validator: (value) {
-                  if (value == null || value == 'Choose difficulty') {
-                    return 'Please choose a difficulty';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 12),
-              // Cook time Field
-              TextFormField(
-                controller: _cookTimeController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Cook time (minutes) *',
-                  border: OutlineInputBorder(),
-                ),
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return 'Cook time is required';
-                  }
-                  final cookVal = int.tryParse(value.trim());
-                  if (cookVal == null || cookVal < 1 || cookVal > 600) {
-                    return 'Cook time must be a whole number from 1 to 600';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 12),
-              // Servings Field (Optional)
-              TextFormField(
-                controller: _servingsController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Servings (1 to 20, optional)',
-                  border: OutlineInputBorder(),
-                ),
-                validator: (value) {
-                  if (value != null && value.trim().isNotEmpty) {
-                    final servingsVal = int.tryParse(value.trim());
-                    if (servingsVal == null || servingsVal < 1 || servingsVal > 20) {
-                      return 'Servings must be a whole number from 1 to 20';
-                    }
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 12),
-              // Notes Field (Optional)
-              TextFormField(
-                controller: _notesController,
-                maxLines: 3,
-                decoration: const InputDecoration(
-                  labelText: 'Notes (optional)',
-                  border: OutlineInputBorder(),
-                ),
-                validator: (value) {
-                  if (value != null && value.trim().length > 300) {
-                    return 'Notes must be at most 300 characters';
-                  }
-                  return null;
-                },
-              ),
-              if (_errorMessage != null) ...[
+                const Divider(),
                 const SizedBox(height: 12),
-                Text(
-                  _errorMessage!,
-                  style: const TextStyle(color: Colors.red, fontSize: 14),
+
+                // Recipe Name
+                TextFormField(
+                  controller: _nameController,
+                  decoration: const InputDecoration(
+                    labelText: 'Recipe Name *',
+                    hintText: 'e.g., Pho Bo, Spaghetti Carbonara',
+                    prefixIcon: Icon(Icons.restaurant),
+                  ),
+                  textCapitalization: TextCapitalization.words,
+                  validator: RecipeValidators.validateRecipeName,
+                ),
+                const SizedBox(height: 14),
+
+                // Category Dropdown
+                DropdownButtonFormField<String>(
+                  // ignore: deprecated_member_use
+                  value: _chosenCategory,
+                  decoration: const InputDecoration(
+                    labelText: 'Category *',
+                    prefixIcon: Icon(Icons.category),
+                  ),
+                  items: [
+                    RecipeAppConstants.defaultCategoryPrompt,
+                    ...RecipeAppConstants.categories,
+                  ].map((cat) {
+                    return DropdownMenuItem(
+                      value: cat,
+                      child: Text(cat),
+                    );
+                  }).toList(),
+                  onChanged: (val) {
+                    if (val != null) {
+                      setState(() {
+                        _chosenCategory = val;
+                      });
+                    }
+                  },
+                  validator: RecipeValidators.validateCategory,
+                ),
+                const SizedBox(height: 14),
+
+                // Difficulty Dropdown
+                DropdownButtonFormField<String>(
+                  // ignore: deprecated_member_use
+                  value: _chosenDifficulty,
+                  decoration: const InputDecoration(
+                    labelText: 'Difficulty *',
+                    prefixIcon: Icon(Icons.speed),
+                  ),
+                  items: [
+                    RecipeAppConstants.defaultDifficultyPrompt,
+                    ...RecipeAppConstants.difficulties,
+                  ].map((diff) {
+                    return DropdownMenuItem(
+                      value: diff,
+                      child: Text(diff),
+                    );
+                  }).toList(),
+                  onChanged: (val) {
+                    if (val != null) {
+                      setState(() {
+                        _chosenDifficulty = val;
+                      });
+                    }
+                  },
+                  validator: RecipeValidators.validateDifficulty,
+                ),
+                const SizedBox(height: 14),
+
+                // Cook Time & Servings Side by Side
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        controller: _cookTimeController,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'Cook Time (min) *',
+                          hintText: '1 - 600',
+                          prefixIcon: Icon(Icons.timer),
+                        ),
+                        validator: RecipeValidators.validateCookTime,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: TextFormField(
+                        controller: _servingsController,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'Servings',
+                          hintText: '1 - 20',
+                          prefixIcon: Icon(Icons.people_alt_outlined),
+                        ),
+                        validator: RecipeValidators.validateServings,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+
+                // Notes Field
+                TextFormField(
+                  controller: _notesController,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                    labelText: 'Notes',
+                    hintText: 'Cooking steps, key ingredients, reminders...',
+                    prefixIcon: Icon(Icons.notes),
+                    alignLabelWithHint: true,
+                  ),
+                  validator: RecipeValidators.validateNotes,
+                ),
+                const SizedBox(height: 18),
+
+                // Error Message banner
+                if (_submissionErrorMessage != null) ...[
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.red.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.red.shade200),
+                    ),
+                    child: Text(
+                      _submissionErrorMessage!,
+                      style: const TextStyle(color: Colors.red, fontSize: 13),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                ],
+
+                // Action Buttons
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Cancel'),
+                    ),
+                    const SizedBox(width: 8),
+                    ElevatedButton(
+                      onPressed: _isSubmitting ? null : _submitNewRecipe,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.deepOrange,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      ),
+                      child: _isSubmitting
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Text('Save Recipe'),
+                    ),
+                  ],
                 ),
               ],
-              const SizedBox(height: 20),
-              ElevatedButton(
-                onPressed: _isSubmitting ? null : _submitForm,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.deepOrange,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                ),
-                child: _isSubmitting
-                    ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : Text(
-                        widget.recipeToEdit == null ? 'Save Recipe' : 'Save Changes',
-                        style: const TextStyle(fontSize: 16),
-                      ),
-              ),
-            ],
+            ),
           ),
         ),
       ),
