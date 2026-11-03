@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import '../core/utils/validators.dart';
 import '../services/auth_service.dart';
 import 'login_screen.dart';
 
+/// User Registration Screen for RecipeBox
+/// Author: Nguyen Vinh Phu (QE180136)
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
 
@@ -10,14 +13,18 @@ class RegisterScreen extends StatefulWidget {
 }
 
 class _RegisterScreenState extends State<RegisterScreen> {
-  final _formKey = GlobalKey<FormState>();
-  final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
-  final _confirmPasswordController = TextEditingController();
+  final _registrationFormKey = GlobalKey<FormState>();
+  final _authService = AuthService();
 
-  AutovalidateMode _autovalidateMode = AutovalidateMode.disabled;
-  bool _isLoading = false;
-  String? _firebaseErrorMessage;
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+  final TextEditingController _confirmPasswordController = TextEditingController();
+
+  AutovalidateMode _validationMode = AutovalidateMode.disabled;
+  bool _isRegistering = false;
+  String? _registrationError;
+  bool _hidePassword = true;
+  bool _hideConfirmPassword = true;
 
   @override
   void dispose() {
@@ -27,25 +34,28 @@ class _RegisterScreenState extends State<RegisterScreen> {
     super.dispose();
   }
 
-  Future<void> _handleRegister() async {
+  Future<void> _handleUserRegistration() async {
     setState(() {
-      _autovalidateMode = AutovalidateMode.always;
-      _firebaseErrorMessage = null;
+      _validationMode = AutovalidateMode.onUserInteraction;
+      _registrationError = null;
     });
 
-    if (!_formKey.currentState!.validate()) return;
+    if (!_registrationFormKey.currentState!.validate()) {
+      return;
+    }
 
     setState(() {
-      _isLoading = true;
+      _isRegistering = true;
     });
 
     try {
-      await AuthService().registerWithEmailAndPassword(
-        email: _emailController.text,
-        password: _passwordController.text,
+      await _authService.registerWithEmailAndPassword(
+        email: _emailController.text.trim(),
+        password: _passwordController.text.trim(),
       );
 
       if (mounted) {
+        // Show success snackbar according to exam specifications
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Registration successful'),
@@ -53,16 +63,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
             duration: Duration(seconds: 4),
           ),
         );
-        await Future.delayed(const Duration(milliseconds: 3500));
+
+        await Future.delayed(const Duration(milliseconds: 2000));
         if (mounted) {
           Navigator.popUntil(context, (route) => route.isFirst);
         }
       }
     } catch (e) {
+      setState(() {
+        _registrationError = e.toString().replaceFirst(RegExp(r'^\[.*?\]\s*'), '');
+      });
+    } finally {
       if (mounted) {
         setState(() {
-          _firebaseErrorMessage = e.toString();
-          _isLoading = false;
+          _isRegistering = false;
         });
       }
     }
@@ -77,14 +91,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
         foregroundColor: Colors.white,
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24.0),
+        padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 20.0),
         child: Form(
-          key: _formKey,
-          autovalidateMode: _autovalidateMode,
+          key: _registrationFormKey,
+          autovalidateMode: _validationMode,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const SizedBox(height: 20),
+              const SizedBox(height: 16),
               const Text(
                 'Create Account',
                 style: TextStyle(
@@ -95,11 +109,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Sign up to get started with RecipeBox',
-                style: TextStyle(color: Colors.grey.shade600),
+                'Sign up to start organizing your private recipes',
+                style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
               ),
-              const SizedBox(height: 32),
-              // Email Field
+              const SizedBox(height: 28),
+
+              // Email Input Field
               TextFormField(
                 controller: _emailController,
                 keyboardType: TextInputType.emailAddress,
@@ -108,61 +123,56 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   border: OutlineInputBorder(),
                   prefixIcon: Icon(Icons.email_outlined),
                 ),
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return 'Email is required';
-                  }
-                  final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
-                  if (!emailRegex.hasMatch(value.trim())) {
-                    return 'Please enter a valid email address';
-                  }
-                  return null;
-                },
+                validator: RecipeValidators.validateEmail,
               ),
-              const SizedBox(height: 20),
-              // Password Field
+              const SizedBox(height: 18),
+
+              // Password Input Field
               TextFormField(
                 controller: _passwordController,
-                obscureText: true,
-                decoration: const InputDecoration(
+                obscureText: _hidePassword,
+                decoration: InputDecoration(
                   labelText: 'Password',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.lock_outline),
+                  border: const OutlineInputBorder(),
+                  prefixIcon: const Icon(Icons.lock_outline),
+                  suffixIcon: IconButton(
+                    icon: Icon(_hidePassword ? Icons.visibility_off : Icons.visibility),
+                    onPressed: () {
+                      setState(() {
+                        _hidePassword = !_hidePassword;
+                      });
+                    },
+                  ),
                 ),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Password is required';
-                  }
-                  if (value.length < 6) {
-                    return 'Password must be at least 6 characters';
-                  }
-                  return null;
-                },
+                validator: RecipeValidators.validatePassword,
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 18),
+
               // Confirm Password Field
               TextFormField(
                 controller: _confirmPasswordController,
-                obscureText: true,
-                decoration: const InputDecoration(
-                  labelText: 'Confirm password',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.lock_reset_outlined),
+                obscureText: _hideConfirmPassword,
+                decoration: InputDecoration(
+                  labelText: 'Confirm Password',
+                  border: const OutlineInputBorder(),
+                  prefixIcon: const Icon(Icons.lock_reset_outlined),
+                  suffixIcon: IconButton(
+                    icon: Icon(_hideConfirmPassword ? Icons.visibility_off : Icons.visibility),
+                    onPressed: () {
+                      setState(() {
+                        _hideConfirmPassword = !_hideConfirmPassword;
+                      });
+                    },
+                  ),
                 ),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Confirm password is required';
-                  }
-                  if (value != _passwordController.text) {
-                    return 'Passwords do not match';
-                  }
-                  return null;
-                },
+                validator: (val) =>
+                    RecipeValidators.validateConfirmPassword(val, _passwordController.text),
               ),
               const SizedBox(height: 24),
-              // Submit Button
+
+              // Register Submit Button
               ElevatedButton(
-                onPressed: _isLoading ? null : _handleRegister,
+                onPressed: _isRegistering ? null : _handleUserRegistration,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.deepOrange,
                   foregroundColor: Colors.white,
@@ -171,7 +181,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     borderRadius: BorderRadius.circular(8),
                   ),
                 ),
-                child: _isLoading
+                child: _isRegistering
                     ? const SizedBox(
                         height: 20,
                         width: 20,
@@ -182,8 +192,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       )
                     : const Text('Register', style: TextStyle(fontSize: 16)),
               ),
-              // Firebase Error Message
-              if (_firebaseErrorMessage != null) ...[
+
+              // Firebase Error Notice Banner
+              if (_registrationError != null) ...[
                 const SizedBox(height: 16),
                 Container(
                   padding: const EdgeInsets.all(12),
@@ -193,13 +204,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     border: Border.all(color: Colors.red.shade200),
                   ),
                   child: Text(
-                    _firebaseErrorMessage!,
+                    _registrationError!,
                     style: const TextStyle(color: Colors.red, fontSize: 14),
                     textAlign: TextAlign.center,
                   ),
                 ),
               ],
               const SizedBox(height: 24),
+
+              // Switch to Login Screen
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -208,7 +221,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     onTap: () {
                       Navigator.pushReplacement(
                         context,
-                        MaterialPageRoute(builder: (context) => const LoginScreen()),
+                        MaterialPageRoute(builder: (_) => const LoginScreen()),
                       );
                     },
                     child: const Text(

@@ -1,11 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../models/recipe_model.dart';
+import '../models/recipe.dart';
+import '../models/recipe_filter.dart';
+import '../models/recipe_statistics.dart';
 import '../services/auth_service.dart';
 import '../services/recipe_service.dart';
 import '../widgets/add_recipe_bottom_sheet.dart';
+import '../widgets/recipe_card.dart';
+import '../widgets/recipe_filter_bar.dart';
+import '../widgets/recipe_summary_card.dart';
 import 'detail_screen.dart';
 
+/// Protected Main Recipe List Screen
+/// Author: Nguyen Vinh Phu (QE180136)
 class ListScreen extends StatefulWidget {
   const ListScreen({super.key});
 
@@ -18,13 +25,7 @@ class _ListScreenState extends State<ListScreen> {
   final RecipeService _recipeService = RecipeService();
   final TextEditingController _searchController = TextEditingController();
 
-  String _selectedCategoryFilter = 'All';
-  String _selectedDifficultyFilter = 'All';
-  bool _favoritesOnly = false;
-  String _searchQuery = '';
-
-  final List<String> _categoryFilterOptions = ['All', 'Breakfast', 'Lunch', 'Dinner', 'Dessert'];
-  final List<String> _difficultyFilterOptions = ['All', 'Easy', 'Medium', 'Hard'];
+  RecipeFilterCriteria _filterCriteria = RecipeFilterCriteria.initial();
 
   @override
   void dispose() {
@@ -32,25 +33,71 @@ class _ListScreenState extends State<ListScreen> {
     super.dispose();
   }
 
-  void _clearFilters() {
+  void _handleResetFilters() {
     setState(() {
-      _selectedCategoryFilter = 'All';
-      _selectedDifficultyFilter = 'All';
-      _favoritesOnly = false;
-      _searchQuery = '';
+      _filterCriteria = RecipeFilterCriteria.initial();
       _searchController.clear();
     });
   }
 
-  void _showAddRecipeBottomSheet() {
+  void _openAddRecipeSheet() {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      builder: (context) => const AddRecipeBottomSheet(),
+      builder: (_) => const AddRecipeBottomSheet(),
     );
+  }
+
+  Future<void> _handleDeleteConfirmation(Recipe recipe) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('Delete Recipe'),
+        content: Text('Are you sure you want to permanently delete "${recipe.name}"?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogCtx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        await _recipeService.deleteRecipe(recipe.id);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Deleted "${recipe.name}"'),
+              backgroundColor: Colors.black87,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to delete: $e'),
+              backgroundColor: Colors.red,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      }
+    }
   }
 
   @override
@@ -58,7 +105,7 @@ class _ListScreenState extends State<ListScreen> {
     final currentUser = FirebaseAuth.instance.currentUser;
 
     return PopScope(
-      canPop: false, // Ngăn bấm nút Back quay lại form Login/Register
+      canPop: false, // Prevents Android back button from popping to auth screens
       child: Scaffold(
         appBar: AppBar(
           title: Text(
@@ -68,7 +115,7 @@ class _ListScreenState extends State<ListScreen> {
           ),
           backgroundColor: Colors.deepOrange,
           foregroundColor: Colors.white,
-          automaticallyImplyLeading: false, // Bỏ nút back
+          automaticallyImplyLeading: false, // Disables back chevron
           actions: [
             TextButton.icon(
               onPressed: () async {
@@ -77,7 +124,10 @@ class _ListScreenState extends State<ListScreen> {
               icon: const Icon(Icons.logout, color: Colors.white, size: 20),
               label: const Text(
                 'Logout',
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
             const SizedBox(width: 8),
@@ -85,7 +135,7 @@ class _ListScreenState extends State<ListScreen> {
         ),
         body: currentUser == null
             ? const Center(child: Text('User not authenticated'))
-            : StreamBuilder<List<RecipeModel>>(
+            : StreamBuilder<List<Recipe>>(
                 stream: _recipeService.getRecipesStream(currentUser.uid),
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
@@ -94,46 +144,40 @@ class _ListScreenState extends State<ListScreen> {
 
                   if (snapshot.hasError) {
                     return Center(
-                      child: Text('Error loading recipes: ${snapshot.error}'),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Text(
+                          'Error loading recipes: ${snapshot.error}',
+                          style: const TextStyle(color: Colors.red),
+                        ),
+                      ),
                     );
                   }
 
                   final allRecipes = snapshot.data ?? [];
-
-                  // Lọc công thức theo 4 tiêu chí: Category, Difficulty, Favorites Only, Search
-                  final filteredRecipes = allRecipes.where((recipe) {
-                    // Lọc Category
-                    if (_selectedCategoryFilter != 'All' && recipe.category != _selectedCategoryFilter) {
-                      return false;
-                    }
-                    // Lọc Difficulty
-                    if (_selectedDifficultyFilter != 'All' && recipe.difficulty != _selectedDifficultyFilter) {
-                      return false;
-                    }
-                    // Lọc Favorites Only
-                    if (_favoritesOnly && !recipe.favorite) {
-                      return false;
-                    }
-                    // Lọc Search (Name hoặc Notes)
-                    if (_searchQuery.trim().isNotEmpty) {
-                      final q = _searchQuery.trim().toLowerCase();
-                      final matchName = recipe.name.toLowerCase().contains(q);
-                      final matchNotes = recipe.notes != null && recipe.notes!.toLowerCase().contains(q);
-                      if (!matchName && !matchNotes) {
-                        return false;
-                      }
-                    }
-                    return true;
-                  }).toList();
+                  final filteredRecipes = _filterCriteria.apply(allRecipes);
+                  final summaryStats = RecipeStatistics.compute(filteredRecipes);
 
                   return Column(
                     children: [
-                      // Vùng Bộ lọc, Tìm kiếm và Nút Clear
-                      _buildFilterAndSearchSection(),
-                      // Vùng Tổng quan Summary
-                      _buildSummarySection(filteredRecipes),
+                      // Filter & Search Controls
+                      RecipeFilterBar(
+                        criteria: _filterCriteria,
+                        searchController: _searchController,
+                        onCriteriaChanged: (updated) {
+                          setState(() {
+                            _filterCriteria = updated;
+                          });
+                        },
+                        onClear: _handleResetFilters,
+                      ),
+
+                      // Aggregated Metrics Summary Card
+                      RecipeSummaryCard(statistics: summaryStats),
+
                       const Divider(height: 1),
-                      // Vùng Hiển thị Danh sách Công thức
+
+                      // Recipe Item Stream / Empty Placeholder
                       Expanded(
                         child: filteredRecipes.isEmpty
                             ? const Center(
@@ -151,79 +195,22 @@ class _ListScreenState extends State<ListScreen> {
                                 itemCount: filteredRecipes.length,
                                 itemBuilder: (context, index) {
                                   final recipe = filteredRecipes[index];
-                                  return Card(
-                                    elevation: 2,
-                                    margin: const EdgeInsets.symmetric(vertical: 6),
-                                    child: ListTile(
-                                      title: Text(
-                                        recipe.name,
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 16,
+                                  return RecipeCardWidget(
+                                    recipe: recipe,
+                                    onTap: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => DetailScreen(recipe: recipe),
                                         ),
-                                      ),
-                                      subtitle: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          const SizedBox(height: 2),
-                                          Text('Cook time: ${recipe.cookTime} min'),
-                                          const SizedBox(height: 2),
-                                          Row(
-                                            children: [
-                                              Container(
-                                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                                decoration: BoxDecoration(
-                                                  color: Colors.deepOrange.shade50,
-                                                  borderRadius: BorderRadius.circular(4),
-                                                ),
-                                                child: Text(
-                                                  recipe.category,
-                                                  style: const TextStyle(
-                                                    fontSize: 12,
-                                                    color: Colors.deepOrange,
-                                                    fontWeight: FontWeight.w500,
-                                                  ),
-                                                ),
-                                              ),
-                                              const SizedBox(width: 8),
-                                              Container(
-                                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                                decoration: BoxDecoration(
-                                                  color: Colors.amber.shade50,
-                                                  borderRadius: BorderRadius.circular(4),
-                                                ),
-                                                child: Text(
-                                                  recipe.difficulty,
-                                                  style: TextStyle(
-                                                    fontSize: 12,
-                                                    color: Colors.amber.shade900,
-                                                    fontWeight: FontWeight.w500,
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ],
-                                      ),
-                                      trailing: IconButton(
-                                        icon: Icon(
-                                          recipe.favorite ? Icons.star : Icons.star_border,
-                                          color: recipe.favorite ? Colors.amber : Colors.grey,
-                                        ),
-                                        onPressed: () {
-                                          _recipeService.toggleFavorite(recipe.id, recipe.favorite);
-                                        },
-                                        tooltip: 'Toggle favorite',
-                                      ),
-                                      onTap: () {
-                                        Navigator.push(
-                                          context,
-                                          MaterialPageRoute(
-                                            builder: (context) => DetailScreen(recipe: recipe),
-                                          ),
-                                        );
-                                      },
-                                    ),
+                                      );
+                                    },
+                                    onFavoriteToggle: () {
+                                      _recipeService.toggleFavorite(recipe.id, recipe.favorite);
+                                    },
+                                    onDelete: () {
+                                      _handleDeleteConfirmation(recipe);
+                                    },
                                   );
                                 },
                               ),
@@ -233,211 +220,12 @@ class _ListScreenState extends State<ListScreen> {
                 },
               ),
         floatingActionButton: FloatingActionButton(
-          onPressed: _showAddRecipeBottomSheet,
+          onPressed: _openAddRecipeSheet,
           backgroundColor: Colors.deepOrange,
           foregroundColor: Colors.white,
           tooltip: 'Add Recipe',
           child: const Icon(Icons.add),
         ),
-      ),
-    );
-  }
-
-  /// Widget hiển thị Thanh tìm kiếm, dropdown Category, Difficulty, switch Favorites và nút Clear
-  Widget _buildFilterAndSearchSection() {
-    return Container(
-      color: Colors.grey.shade100,
-      padding: const EdgeInsets.all(12.0),
-      child: Column(
-        children: [
-          // Search box
-          TextField(
-            controller: _searchController,
-            decoration: InputDecoration(
-              hintText: 'Search name or notes...',
-              prefixIcon: const Icon(Icons.search),
-              suffixIcon: _searchQuery.isNotEmpty
-                  ? IconButton(
-                      icon: const Icon(Icons.clear),
-                      onPressed: () {
-                        setState(() {
-                          _searchController.clear();
-                          _searchQuery = '';
-                        });
-                      },
-                    )
-                  : null,
-              contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-              filled: true,
-              fillColor: Colors.white,
-            ),
-            onChanged: (val) {
-              setState(() {
-                _searchQuery = val;
-              });
-            },
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              // Category Filter
-              Expanded(
-                child: DropdownButtonFormField<String>(
-                  // ignore: deprecated_member_use
-                  value: _selectedCategoryFilter,
-                  decoration: const InputDecoration(
-                    labelText: 'Category',
-                    contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    border: OutlineInputBorder(),
-                    filled: true,
-                    fillColor: Colors.white,
-                  ),
-                  items: _categoryFilterOptions.map((c) {
-                    return DropdownMenuItem(value: c, child: Text(c, style: const TextStyle(fontSize: 13)));
-                  }).toList(),
-                  onChanged: (val) {
-                    if (val != null) {
-                      setState(() {
-                        _selectedCategoryFilter = val;
-                      });
-                    }
-                  },
-                ),
-              ),
-              const SizedBox(width: 8),
-              // Difficulty Filter
-              Expanded(
-                child: DropdownButtonFormField<String>(
-                  // ignore: deprecated_member_use
-                  value: _selectedDifficultyFilter,
-                  decoration: const InputDecoration(
-                    labelText: 'Difficulty',
-                    contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    border: OutlineInputBorder(),
-                    filled: true,
-                    fillColor: Colors.white,
-                  ),
-                  items: _difficultyFilterOptions.map((d) {
-                    return DropdownMenuItem(value: d, child: Text(d, style: const TextStyle(fontSize: 13)));
-                  }).toList(),
-                  onChanged: (val) {
-                    if (val != null) {
-                      setState(() {
-                        _selectedDifficultyFilter = val;
-                      });
-                    }
-                  },
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              // Favorites Only Switch
-              FilterChip(
-                label: const Text('Favorites Only'),
-                selected: _favoritesOnly,
-                avatar: Icon(
-                  _favoritesOnly ? Icons.star : Icons.star_border,
-                  color: _favoritesOnly ? Colors.amber : Colors.grey,
-                  size: 18,
-                ),
-                onSelected: (selected) {
-                  setState(() {
-                    _favoritesOnly = selected;
-                  });
-                },
-              ),
-              const Spacer(),
-              // Clear Button
-              TextButton.icon(
-                onPressed: _clearFilters,
-                icon: const Icon(Icons.refresh, size: 18),
-                label: const Text('Clear'),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// Widget tổng quan mô tả số lượng công thức, số lượng yêu thích, tổng thời gian nấu và phân bổ theo Category
-  Widget _buildSummarySection(List<RecipeModel> recipes) {
-    final int totalCount = recipes.length;
-    final int favCount = recipes.where((r) => r.favorite).length;
-    final int totalTime = recipes.fold(0, (sum, r) => sum + r.cookTime);
-
-    // Đếm theo từng category
-    final Map<String, int> categoryCounts = {};
-    for (var recipe in recipes) {
-      categoryCounts[recipe.category] = (categoryCounts[recipe.category] ?? 0) + 1;
-    }
-
-    // Sắp xếp các category xuất hiện: số lượng nhiều nhất xếp trước
-    // Nếu bằng nhau: Breakfast -> Lunch -> Dinner -> Dessert
-    final constOrder = ['Breakfast', 'Lunch', 'Dinner', 'Dessert'];
-    final categoryEntries = categoryCounts.entries.where((e) => e.value > 0).toList();
-
-    categoryEntries.sort((a, b) {
-      int countCompare = b.value.compareTo(a.value);
-      if (countCompare != 0) return countCompare;
-      int orderA = constOrder.indexOf(a.key);
-      int orderB = constOrder.indexOf(b.key);
-      if (orderA == -1) orderA = 99;
-      if (orderB == -1) orderB = 99;
-      return orderA.compareTo(orderB);
-    });
-
-    return Container(
-      width: double.infinity,
-      color: Colors.deepOrange.shade50.withValues(alpha: 0.5),
-      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Text(
-                'Recipes: $totalCount',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-              ),
-              const SizedBox(width: 16),
-              Text(
-                'Favorites: $favCount',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.amber),
-              ),
-              const SizedBox(width: 16),
-              Text(
-                'Total time: $totalTime min',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.deepOrange),
-              ),
-            ],
-          ),
-          if (categoryEntries.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: categoryEntries.map((e) {
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 2.0),
-                  child: Text(
-                    '${e.key}: ${e.value}',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Colors.grey.shade800,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                );
-              }).toList(),
-            ),
-          ],
-        ],
       ),
     );
   }

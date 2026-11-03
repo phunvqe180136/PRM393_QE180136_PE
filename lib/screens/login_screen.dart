@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import '../core/utils/validators.dart';
 import '../services/auth_service.dart';
 import 'register_screen.dart';
 
+/// User Authentication Login Screen
+/// Author: Nguyen Vinh Phu (QE180136)
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -10,48 +13,56 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _formKey = GlobalKey<FormState>();
-  final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
+  final _loginFormKey = GlobalKey<FormState>();
+  final _authService = AuthService();
 
-  AutovalidateMode _autovalidateMode = AutovalidateMode.disabled;
-  bool _isLoading = false;
-  String? _firebaseErrorMessage;
+  final TextEditingController _emailInputController = TextEditingController();
+  final TextEditingController _passwordInputController = TextEditingController();
+
+  AutovalidateMode _validationMode = AutovalidateMode.disabled;
+  bool _isProcessing = false;
+  String? _authErrorMessage;
+  bool _isPasswordObscured = true;
 
   @override
   void dispose() {
-    _emailController.dispose();
-    _passwordController.dispose();
+    _emailInputController.dispose();
+    _passwordInputController.dispose();
     super.dispose();
   }
 
-  Future<void> _handleLogin() async {
+  Future<void> _executeLogin() async {
     setState(() {
-      _autovalidateMode = AutovalidateMode.always;
-      _firebaseErrorMessage = null;
+      _validationMode = AutovalidateMode.onUserInteraction;
+      _authErrorMessage = null;
     });
 
-    if (!_formKey.currentState!.validate()) return;
+    if (!_loginFormKey.currentState!.validate()) {
+      return;
+    }
 
     setState(() {
-      _isLoading = true;
+      _isProcessing = true;
     });
 
     try {
-      await AuthService().signInWithEmailAndPassword(
-        email: _emailController.text,
-        password: _passwordController.text,
+      await _authService.signInWithEmailAndPassword(
+        email: _emailInputController.text.trim(),
+        password: _passwordInputController.text.trim(),
       );
 
-      // Khi đăng nhập thành công, StreamBuilder ở main/home sẽ điều hướng sang ListScreen
       if (mounted) {
+        // StreamBuilder on HomeScreen handles routing to ListScreen
         Navigator.popUntil(context, (route) => route.isFirst);
       }
     } catch (e) {
+      setState(() {
+        _authErrorMessage = e.toString().replaceFirst(RegExp(r'^\[.*?\]\s*'), '');
+      });
+    } finally {
       if (mounted) {
         setState(() {
-          _firebaseErrorMessage = e.toString();
-          _isLoading = false;
+          _isProcessing = false;
         });
       }
     }
@@ -66,10 +77,10 @@ class _LoginScreenState extends State<LoginScreen> {
         foregroundColor: Colors.white,
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24.0),
+        padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 20.0),
         child: Form(
-          key: _formKey,
-          autovalidateMode: _autovalidateMode,
+          key: _loginFormKey,
+          autovalidateMode: _validationMode,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -85,50 +96,54 @@ class _LoginScreenState extends State<LoginScreen> {
               const SizedBox(height: 8),
               Text(
                 'Sign in to access your recipe collection',
-                style: TextStyle(color: Colors.grey.shade600),
+                style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
               ),
               const SizedBox(height: 32),
-              // Email Field
+
+              // Email Input Field
               TextFormField(
-                controller: _emailController,
+                controller: _emailInputController,
                 keyboardType: TextInputType.emailAddress,
                 decoration: const InputDecoration(
                   labelText: 'Email',
                   border: OutlineInputBorder(),
                   prefixIcon: Icon(Icons.email_outlined),
                 ),
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return 'Email is required';
-                  }
-                  final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
-                  if (!emailRegex.hasMatch(value.trim())) {
-                    return 'Please enter a valid email address';
-                  }
-                  return null;
-                },
+                validator: RecipeValidators.validateEmail,
               ),
               const SizedBox(height: 20),
-              // Password Field
+
+              // Password Input Field
               TextFormField(
-                controller: _passwordController,
-                obscureText: true,
-                decoration: const InputDecoration(
+                controller: _passwordInputController,
+                obscureText: _isPasswordObscured,
+                decoration: InputDecoration(
                   labelText: 'Password',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.lock_outline),
+                  border: const OutlineInputBorder(),
+                  prefixIcon: const Icon(Icons.lock_outline),
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      _isPasswordObscured ? Icons.visibility_off : Icons.visibility,
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        _isPasswordObscured = !_isPasswordObscured;
+                      });
+                    },
+                  ),
                 ),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
+                validator: (val) {
+                  if (val == null || val.isEmpty) {
                     return 'Password is required';
                   }
                   return null;
                 },
               ),
               const SizedBox(height: 24),
-              // Submit Button
+
+              // Login Button
               ElevatedButton(
-                onPressed: _isLoading ? null : _handleLogin,
+                onPressed: _isProcessing ? null : _executeLogin,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.deepOrange,
                   foregroundColor: Colors.white,
@@ -137,7 +152,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     borderRadius: BorderRadius.circular(8),
                   ),
                 ),
-                child: _isLoading
+                child: _isProcessing
                     ? const SizedBox(
                         height: 20,
                         width: 20,
@@ -148,8 +163,9 @@ class _LoginScreenState extends State<LoginScreen> {
                       )
                     : const Text('Login', style: TextStyle(fontSize: 16)),
               ),
-              // Firebase Error Message (hiển thị dưới nút Submit nếu có lỗi từ Firebase)
-              if (_firebaseErrorMessage != null) ...[
+
+              // Firebase Error Notice Banner
+              if (_authErrorMessage != null) ...[
                 const SizedBox(height: 16),
                 Container(
                   padding: const EdgeInsets.all(12),
@@ -159,13 +175,15 @@ class _LoginScreenState extends State<LoginScreen> {
                     border: Border.all(color: Colors.red.shade200),
                   ),
                   child: Text(
-                    _firebaseErrorMessage!,
+                    _authErrorMessage!,
                     style: const TextStyle(color: Colors.red, fontSize: 14),
                     textAlign: TextAlign.center,
                   ),
                 ),
               ],
               const SizedBox(height: 24),
+
+              // Switch to Register Screen
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -174,7 +192,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     onTap: () {
                       Navigator.pushReplacement(
                         context,
-                        MaterialPageRoute(builder: (context) => const RegisterScreen()),
+                        MaterialPageRoute(builder: (_) => const RegisterScreen()),
                       );
                     },
                     child: const Text(

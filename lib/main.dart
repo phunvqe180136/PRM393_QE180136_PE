@@ -1,11 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'core/constants/app_constants.dart';
+import 'core/theme/app_theme.dart';
 import 'firebase_options.dart';
 import 'screens/home_screen.dart';
 
+/// RecipeBox Application Entry Point
+/// Developed by Nguyen Vinh Phu (QE180136) for PRM393 Practical Exam
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Initialize Firebase client service
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
@@ -19,12 +24,9 @@ class RecipeBoxApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'RecipeBox',
+      title: RecipeAppConstants.appTitle,
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepOrange),
-        useMaterial3: true,
-      ),
+      theme: AppTheme.lightTheme,
       home: const HomeScreen(),
     );
   }
