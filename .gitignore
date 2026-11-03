@@ -41,3 +41,9 @@ release/
 /android/app/release
 .gradle/
 .kotlin/
+
+*.bak
+current_screen.png
+.env.ps1
+scratch/
+.metadata
