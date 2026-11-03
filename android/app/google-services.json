@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "129270298736",
+    "project_id": "prm393-pe26",
+    "storage_bucket": "prm393-pe26.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:129270298736:android:828c6a0317cefb95ae5cb5",
+        "android_client_info": {
+          "package_name": "com.company.RecipeBox"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCcX_aD54tODmQh1zqMYtYDEjR_yQ-eQFY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:129270298736:android:a2b9c1ff999c82d5ae5cb5",
+        "android_client_info": {
+          "package_name": "com.company.bookshelf"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCcX_aD54tODmQh1zqMYtYDEjR_yQ-eQFY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
