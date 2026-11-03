@@ -53,7 +53,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             duration: Duration(seconds: 4),
           ),
         );
-        await Future.delayed(const Duration(milliseconds: 1500));
+        await Future.delayed(const Duration(milliseconds: 3500));
         if (mounted) {
           Navigator.popUntil(context, (route) => route.isFirst);
         }
