@@ -1,59 +1,67 @@
 import 'package:firebase_auth/firebase_auth.dart';
 
+/// Authentication Management Service for RecipeBox
+/// Author: Nguyen Vinh Phu (QE180136)
 class AuthService {
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseAuth _firebaseAuth;
 
-  /// Lấy user hiện tại
-  User? get currentUser => _auth.currentUser;
+  AuthService({FirebaseAuth? firebaseAuth})
+      : _firebaseAuth = firebaseAuth ?? FirebaseAuth.instance;
 
-  /// Stream theo dõi trạng thái đăng nhập/đăng xuất
-  Stream<User?> get authStateChanges => _auth.authStateChanges();
+  /// Returns the actively signed-in Firebase user, or null
+  User? get currentUser => _firebaseAuth.currentUser;
 
-  /// Đăng ký tài khoản bằng Email & Password
+  /// Stream listening for real-time authentication state updates
+  Stream<User?> get authStateChanges => _firebaseAuth.authStateChanges();
+
+  /// Create a new account with email and password
   Future<UserCredential> registerWithEmailAndPassword({
     required String email,
     required String password,
   }) async {
     try {
-      return await _auth.createUserWithEmailAndPassword(
+      final credential = await _firebaseAuth.createUserWithEmailAndPassword(
         email: email.trim(),
         password: password.trim(),
       );
-    } on FirebaseAuthException catch (e) {
-      throw _getAuthErrorMessage(e);
+      return credential;
+    } on FirebaseAuthException catch (error) {
+      throw _parseAuthException(error);
     } catch (e) {
-      throw e.toString();
+      throw 'An error occurred during registration: ${e.toString()}';
     }
   }
 
-  /// Đăng nhập bằng Email & Password
+  /// Sign in with an existing email and password
   Future<UserCredential> signInWithEmailAndPassword({
     required String email,
     required String password,
   }) async {
     try {
-      return await _auth.signInWithEmailAndPassword(
+      final credential = await _firebaseAuth.signInWithEmailAndPassword(
         email: email.trim(),
         password: password.trim(),
       );
-    } on FirebaseAuthException catch (e) {
-      throw _getAuthErrorMessage(e);
+      return credential;
+    } on FirebaseAuthException catch (error) {
+      throw _parseAuthException(error);
     } catch (e) {
-      throw e.toString();
+      throw 'An unexpected error occurred during login.';
     }
   }
 
-  /// Đăng xuất
+  /// Sign out the active user session
   Future<void> signOut() async {
-    await _auth.signOut();
+    await _firebaseAuth.signOut();
   }
 
-  /// Xử lý chuyển đổi mã lỗi Firebase Auth thành thông báo thân thiện
-  String _getAuthErrorMessage(FirebaseAuthException e) {
-    if (e.message != null && e.message!.trim().isNotEmpty) {
-      return e.message!;
+  /// Converts Firebase authentication exceptions into human-friendly error messages
+  String _parseAuthException(FirebaseAuthException exception) {
+    if (exception.message != null && exception.message!.trim().isNotEmpty) {
+      return exception.message!.trim();
     }
-    switch (e.code) {
+
+    switch (exception.code) {
       case 'email-already-in-use':
         return 'The email address is already in use by another account.';
       case 'invalid-email':
@@ -64,8 +72,14 @@ class AuthService {
       case 'wrong-password':
       case 'invalid-credential':
         return 'Invalid email or password.';
+      case 'network-request-failed':
+        return 'Network connection failed. Please check your internet connection.';
+      case 'user-disabled':
+        return 'This user account has been disabled.';
+      case 'too-many-requests':
+        return 'Too many attempts. Please try again later.';
       default:
-        return 'An unexpected authentication error occurred.';
+        return 'Authentication failed (${exception.code}). Please verify your credentials.';
     }
   }
 }

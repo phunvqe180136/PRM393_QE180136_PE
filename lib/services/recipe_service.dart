@@ -1,68 +1,78 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../models/recipe_model.dart';
+import '../core/constants/app_constants.dart';
+import '../models/recipe.dart';
 
+/// Firestore Database Service for Recipe Collection
+/// Author: Nguyen Vinh Phu (QE180136)
 class RecipeService {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final String _collection = 'recipes';
+  final FirebaseFirestore _firestoreInstance;
+  final String _collectionPath;
 
-  /// Lấy danh sách công thức của user dưới dạng Stream thời gian thực
-  /// Được sắp xếp theo thời gian nấu (cookTime) từ ngắn nhất đến dài nhất,
-  /// nếu cookTime bằng nhau thì sắp xếp theo Tên (không phân biệt hoa/thường).
-  Stream<List<RecipeModel>> getRecipesStream(String userId) {
-    return _firestore
-        .collection(_collection)
+  RecipeService({
+    FirebaseFirestore? firestore,
+    String? collectionPath,
+  })  : _firestoreInstance = firestore ?? FirebaseFirestore.instance,
+        _collectionPath = collectionPath ?? RecipeAppConstants.firestoreCollection;
+
+  CollectionReference<Map<String, dynamic>> get _recipeRef =>
+      _firestoreInstance.collection(_collectionPath);
+
+  /// Streams private recipes belonging to the current user ordered by cookTime ASC,
+  /// with secondary alphabetical tie-break by name.
+  Stream<List<Recipe>> getRecipesStream(String userId) {
+    return _recipeRef
         .where('userId', isEqualTo: userId)
         .snapshots()
         .map((snapshot) {
       final recipes = snapshot.docs
-          .map((doc) => RecipeModel.fromFirestore(doc))
+          .map((doc) => Recipe.fromSnapshot(doc))
           .toList();
 
-      recipes.sort((a, b) {
-        int cookCompare = a.cookTime.compareTo(b.cookTime);
-        if (cookCompare != 0) return cookCompare;
-        return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      // Custom deterministic comparator: cookTime ASC -> name ASC (case-insensitive)
+      recipes.sort((first, second) {
+        final timeComparison = first.cookTime.compareTo(second.cookTime);
+        if (timeComparison != 0) {
+          return timeComparison;
+        }
+        return first.name.toLowerCase().compareTo(second.name.toLowerCase());
       });
 
       return recipes;
     });
   }
 
-  /// Kiểm tra trùng lặp tên công thức cho cùng một người dùng (case-insensitive)
+  /// Verifies whether a recipe name already exists for this user (case-insensitive)
   Future<bool> isDuplicateRecipe({
     required String userId,
     required String name,
     String? excludeRecipeId,
   }) async {
-    final querySnapshot = await _firestore
-        .collection(_collection)
+    final cleanName = name.trim().toLowerCase();
+
+    final querySnapshot = await _recipeRef
         .where('userId', isEqualTo: userId)
         .get();
 
-    final targetName = name.trim().toLowerCase();
-
-    for (var doc in querySnapshot.docs) {
+    for (final doc in querySnapshot.docs) {
       if (excludeRecipeId != null && doc.id == excludeRecipeId) {
         continue;
       }
-      final data = doc.data();
-      final docName = (data['name'] as String? ?? '').trim().toLowerCase();
-
-      if (docName == targetName) {
+      final existingName = (doc.data()['name'] as String? ?? '').trim().toLowerCase();
+      if (existingName == cleanName) {
         return true;
       }
     }
     return false;
   }
 
-  /// Thêm một công thức mới vào Firestore
-  Future<void> addRecipe(RecipeModel recipe) async {
-    final isDup = await isDuplicateRecipe(
+  /// Inserts a new recipe document after enforcing duplicate check
+  Future<DocumentReference<Map<String, dynamic>>> addRecipe(Recipe recipe) async {
+    final isDuplicate = await isDuplicateRecipe(
       userId: recipe.userId,
       name: recipe.name,
     );
 
-    if (isDup) {
+    if (isDuplicate) {
       throw FirebaseException(
         plugin: 'cloud_firestore',
         code: 'already-exists',
@@ -70,18 +80,18 @@ class RecipeService {
       );
     }
 
-    await _firestore.collection(_collection).add(recipe.toMap());
+    return await _recipeRef.add(recipe.toMap());
   }
 
-  /// Cập nhật thông tin công thức trong Firestore
-  Future<void> updateRecipe(RecipeModel recipe) async {
-    final isDup = await isDuplicateRecipe(
+  /// Updates an existing recipe document
+  Future<void> updateRecipe(Recipe recipe) async {
+    final isDuplicate = await isDuplicateRecipe(
       userId: recipe.userId,
       name: recipe.name,
       excludeRecipeId: recipe.id,
     );
 
-    if (isDup) {
+    if (isDuplicate) {
       throw FirebaseException(
         plugin: 'cloud_firestore',
         code: 'already-exists',
@@ -89,19 +99,18 @@ class RecipeService {
       );
     }
 
-    await _firestore.collection(_collection).doc(recipe.id).update(recipe.toMap());
+    await _recipeRef.doc(recipe.id).update(recipe.toMap());
   }
 
-  /// Thay đổi trạng thái Yêu thích (favorite)
+  /// Toggles favorite status of an existing recipe
   Future<void> toggleFavorite(String recipeId, bool currentFavorite) async {
-    await _firestore
-        .collection(_collection)
-        .doc(recipeId)
-        .update({'favorite': !currentFavorite});
+    await _recipeRef.doc(recipeId).update({
+      'favorite': !currentFavorite,
+    });
   }
 
-  /// Xóa công thức khỏi Firestore
+  /// Permanently removes a recipe document from Firestore
   Future<void> deleteRecipe(String recipeId) async {
-    await _firestore.collection(_collection).doc(recipeId).delete();
+    await _recipeRef.doc(recipeId).delete();
   }
 }
