@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
+import '../core/theme/app_theme.dart';
 import '../models/recipe_statistics.dart';
 
-/// Recipe Summary & Category Breakdown Dashboard Widget
+/// Bento-Style Culinary Metrics & Category Distribution Dashboard
 /// Author: Nguyen Vinh Phu (QE180136)
 class RecipeSummaryCard extends StatelessWidget {
   final RecipeStatistics statistics;
@@ -14,74 +15,98 @@ class RecipeSummaryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      padding: const EdgeInsets.all(14),
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade300),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
         boxShadow: [
           BoxShadow(
-            // ignore: deprecated_member_use
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // 3 Primary Metric Counters
+          // 3 Metric Cards Row
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              _buildMetricItem(
-                label: 'Recipes',
-                value: statistics.totalRecipes.toString(),
-                icon: Icons.menu_book_outlined,
-                color: Colors.deepOrange,
+              Expanded(
+                child: _buildMetricTile(
+                  label: 'Recipes',
+                  value: statistics.totalRecipes.toString(),
+                  icon: Icons.menu_book_rounded,
+                  color: AppTheme.primaryEmerald,
+                ),
               ),
-              _buildVerticalDivider(),
-              _buildMetricItem(
-                label: 'Favorites',
-                value: statistics.favoriteCount.toString(),
-                icon: Icons.star,
-                color: Colors.amber.shade700,
+              const SizedBox(width: 10),
+              Expanded(
+                child: _buildMetricTile(
+                  label: 'Favorites',
+                  value: statistics.favoriteCount.toString(),
+                  icon: Icons.star_rounded,
+                  color: AppTheme.accentAmber,
+                ),
               ),
-              _buildVerticalDivider(),
-              _buildMetricItem(
-                label: 'Total time',
-                value: '${statistics.totalCookingMinutes}m',
-                icon: Icons.access_time_filled,
-                color: Colors.blueGrey,
+              const SizedBox(width: 10),
+              Expanded(
+                child: _buildMetricTile(
+                  label: 'Total time',
+                  value: '${statistics.totalCookingMinutes}m',
+                  icon: Icons.schedule_rounded,
+                  color: const Color(0xFF0284C7),
+                ),
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          Divider(height: 1, color: Colors.grey.shade200),
-          const SizedBox(height: 10),
+          const SizedBox(height: 14),
 
-          // Category Breakdown Badges
+          // Category distribution pills
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
             child: Row(
-              children: statistics.categoryCounts.entries.map((entry) {
-                return Padding(
-                  padding: const EdgeInsets.only(right: 8.0),
-                  child: Chip(
-                    backgroundColor: Colors.grey.shade100,
-                    side: BorderSide(color: Colors.grey.shade300),
-                    labelPadding: const EdgeInsets.symmetric(horizontal: 4),
-                    visualDensity: VisualDensity.compact,
-                    label: Text(
-                      '${entry.key}: ${entry.value}',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey.shade800,
-                        fontWeight: FontWeight.w500,
+              children: statistics.categoryCounts.entries.map((item) {
+                return Container(
+                  margin: const EdgeInsets.only(right: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        item.key,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF334155),
+                        ),
                       ),
-                    ),
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: AppTheme.primaryEmerald.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          item.value.toString(),
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: AppTheme.primaryEmerald,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 );
               }).toList(),
@@ -92,48 +117,46 @@ class RecipeSummaryCard extends StatelessWidget {
     );
   }
 
-  Widget _buildMetricItem({
+  Widget _buildMetricTile({
     required String label,
     required String value,
     required IconData icon,
     required Color color,
   }) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 16, color: color),
-            const SizedBox(width: 4),
-            Text(
-              value,
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: color,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 2),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            color: Colors.grey.shade600,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildVerticalDivider() {
     return Container(
-      height: 28,
-      width: 1,
-      color: Colors.grey.shade300,
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 16, color: color),
+              const SizedBox(width: 4),
+              Text(
+                value,
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF64748B),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

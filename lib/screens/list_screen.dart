@@ -1,17 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../core/theme/app_theme.dart';
 import '../models/recipe.dart';
 import '../models/recipe_filter.dart';
 import '../models/recipe_statistics.dart';
-import '../services/auth_service.dart';
-import '../services/recipe_service.dart';
+import '../repositories/firebase_auth_repository.dart';
+import '../repositories/firestore_recipe_repository.dart';
 import '../widgets/add_recipe_bottom_sheet.dart';
 import '../widgets/recipe_card.dart';
 import '../widgets/recipe_filter_bar.dart';
 import '../widgets/recipe_summary_card.dart';
 import 'detail_screen.dart';
 
-/// Protected Main Recipe List Screen
+/// Next-Generation Recipe Collection Screen
 /// Author: Nguyen Vinh Phu (QE180136)
 class ListScreen extends StatefulWidget {
   const ListScreen({super.key});
@@ -21,51 +22,50 @@ class ListScreen extends StatefulWidget {
 }
 
 class _ListScreenState extends State<ListScreen> {
-  final AuthService _authService = AuthService();
-  final RecipeService _recipeService = RecipeService();
-  final TextEditingController _searchController = TextEditingController();
+  final _authGateway = FirebaseAuthRepository();
+  final _recipeGateway = FirestoreRecipeRepository();
+  final TextEditingController _searchFilterController = TextEditingController();
 
-  RecipeFilterCriteria _filterCriteria = RecipeFilterCriteria.initial();
+  RecipeFilterCriteria _currentFilterCriteria = RecipeFilterCriteria.initial();
 
   @override
   void dispose() {
-    _searchController.dispose();
+    _searchFilterController.dispose();
     super.dispose();
   }
 
-  void _handleResetFilters() {
+  void _resetActiveFilters() {
     setState(() {
-      _filterCriteria = RecipeFilterCriteria.initial();
-      _searchController.clear();
+      _currentFilterCriteria = RecipeFilterCriteria.initial();
+      _searchFilterController.clear();
     });
   }
 
-  void _openAddRecipeSheet() {
+  void _triggerAddRecipeModal() {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
+      backgroundColor: Colors.transparent,
       builder: (_) => const AddRecipeBottomSheet(),
     );
   }
 
-  Future<void> _handleDeleteConfirmation(Recipe recipe) async {
-    final confirmed = await showDialog<bool>(
+  Future<void> _confirmRecipeRemoval(Recipe targetRecipe) async {
+    final shouldDelete = await showDialog<bool>(
       context: context,
-      builder: (dialogCtx) => AlertDialog(
-        title: const Text('Delete Recipe'),
-        content: Text('Are you sure you want to permanently delete "${recipe.name}"?'),
+      builder: (dialogContext) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Delete Recipe', style: TextStyle(fontWeight: FontWeight.bold)),
+        content: Text('Are you sure you want to permanently delete "${targetRecipe.name}"?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(dialogCtx, false),
-            child: const Text('Cancel'),
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel', style: TextStyle(color: Color(0xFF64748B))),
           ),
           ElevatedButton(
-            onPressed: () => Navigator.pop(dialogCtx, true),
+            onPressed: () => Navigator.pop(dialogContext, true),
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
+              backgroundColor: const Color(0xFFDC2626),
               foregroundColor: Colors.white,
             ),
             child: const Text('Delete'),
@@ -74,26 +74,20 @@ class _ListScreenState extends State<ListScreen> {
       ),
     );
 
-    if (confirmed == true) {
-      try {
-        await _recipeService.deleteRecipe(recipe.id);
-        if (mounted) {
+    if (shouldDelete == true && mounted) {
+      final res = await _recipeGateway.eraseRecipe(targetRecipe.id);
+      if (mounted) {
+        if (res.isSuccess) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Deleted "${recipe.name}"'),
-              backgroundColor: Colors.black87,
+              content: Text('Deleted "${targetRecipe.name}"'),
+              backgroundColor: const Color(0xFF1E293B),
               behavior: SnackBarBehavior.floating,
             ),
           );
-        }
-      } catch (e) {
-        if (mounted) {
+        } else {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Failed to delete: $e'),
-              backgroundColor: Colors.red,
-              behavior: SnackBarBehavior.floating,
-            ),
+            SnackBar(content: Text(res.errorOrNull!), backgroundColor: Colors.red),
           );
         }
       }
@@ -102,115 +96,98 @@ class _ListScreenState extends State<ListScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final currentUser = FirebaseAuth.instance.currentUser;
+    final activeUser = FirebaseAuth.instance.currentUser;
 
     return PopScope(
-      canPop: false, // Prevents Android back button from popping to auth screens
+      canPop: false, // Strict exam compliance: Disable hardware back to auth screens
       child: Scaffold(
+        backgroundColor: AppTheme.surfaceCanvas,
         appBar: AppBar(
+          automaticallyImplyLeading: false,
+          backgroundColor: AppTheme.primaryEmerald,
           title: Text(
-            currentUser?.email ?? 'RecipeBox',
-            style: const TextStyle(fontSize: 16),
+            activeUser?.email ?? 'RecipeBox',
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
             overflow: TextOverflow.ellipsis,
           ),
-          backgroundColor: Colors.deepOrange,
-          foregroundColor: Colors.white,
-          automaticallyImplyLeading: false, // Disables back chevron
           actions: [
             TextButton.icon(
-              onPressed: () async {
-                await _authService.signOut();
-              },
-              icon: const Icon(Icons.logout, color: Colors.white, size: 20),
+              onPressed: () async => await _authGateway.logOut(),
+              icon: const Icon(Icons.logout_rounded, color: Colors.white, size: 18),
               label: const Text(
                 'Logout',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                ),
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
               ),
             ),
             const SizedBox(width: 8),
           ],
         ),
-        body: currentUser == null
+        body: activeUser == null
             ? const Center(child: Text('User not authenticated'))
             : StreamBuilder<List<Recipe>>(
-                stream: _recipeService.getRecipesStream(currentUser.uid),
+                stream: _recipeGateway.subscribeUserRecipes(activeUser.uid),
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
+                    return const Center(
+                      child: CircularProgressIndicator(color: AppTheme.primaryEmerald),
+                    );
                   }
 
                   if (snapshot.hasError) {
                     return Center(
                       child: Padding(
-                        padding: const EdgeInsets.all(16.0),
+                        padding: const EdgeInsets.all(20.0),
                         child: Text(
                           'Error loading recipes: ${snapshot.error}',
-                          style: const TextStyle(color: Colors.red),
+                          style: const TextStyle(color: Color(0xFFDC2626)),
                         ),
                       ),
                     );
                   }
 
                   final allRecipes = snapshot.data ?? [];
-                  final filteredRecipes = _filterCriteria.apply(allRecipes);
-                  final summaryStats = RecipeStatistics.compute(filteredRecipes);
+                  final filteredCollection = _currentFilterCriteria.apply(allRecipes);
+                  final metricSummary = RecipeStatistics.compute(filteredCollection);
 
                   return Column(
                     children: [
-                      // Filter & Search Controls
+                      // Filter & Search Header
                       RecipeFilterBar(
-                        criteria: _filterCriteria,
-                        searchController: _searchController,
-                        onCriteriaChanged: (updated) {
-                          setState(() {
-                            _filterCriteria = updated;
-                          });
+                        criteria: _currentFilterCriteria,
+                        searchController: _searchFilterController,
+                        onCriteriaChanged: (newCriteria) {
+                          setState(() => _currentFilterCriteria = newCriteria);
                         },
-                        onClear: _handleResetFilters,
+                        onClear: _resetActiveFilters,
                       ),
 
-                      // Aggregated Metrics Summary Card
-                      RecipeSummaryCard(statistics: summaryStats),
+                      // Metrics Dashboard
+                      RecipeSummaryCard(statistics: metricSummary),
 
-                      const Divider(height: 1),
-
-                      // Recipe Item Stream / Empty Placeholder
+                      // Recipe Scroll View / Empty State
                       Expanded(
-                        child: filteredRecipes.isEmpty
-                            ? const Center(
-                                child: Text(
-                                  'No recipes found',
-                                  style: TextStyle(
-                                    fontSize: 18,
-                                    color: Colors.grey,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              )
+                        child: filteredCollection.isEmpty
+                            ? _buildEmptyStatePlaceholder()
                             : ListView.builder(
+                                physics: const BouncingScrollPhysics(),
                                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                itemCount: filteredRecipes.length,
+                                itemCount: filteredCollection.length,
                                 itemBuilder: (context, index) {
-                                  final recipe = filteredRecipes[index];
+                                  final item = filteredCollection[index];
                                   return RecipeCardWidget(
-                                    recipe: recipe,
+                                    recipe: item,
                                     onTap: () {
                                       Navigator.push(
                                         context,
                                         MaterialPageRoute(
-                                          builder: (_) => DetailScreen(recipe: recipe),
+                                          builder: (_) => DetailScreen(recipe: item),
                                         ),
                                       );
                                     },
                                     onFavoriteToggle: () {
-                                      _recipeService.toggleFavorite(recipe.id, recipe.favorite);
+                                      _recipeGateway.invertFavoriteFlag(item.id, item.favorite);
                                     },
-                                    onDelete: () {
-                                      _handleDeleteConfirmation(recipe);
-                                    },
+                                    onDelete: () => _confirmRecipeRemoval(item),
                                   );
                                 },
                               ),
@@ -219,13 +196,51 @@ class _ListScreenState extends State<ListScreen> {
                   );
                 },
               ),
-        floatingActionButton: FloatingActionButton(
-          onPressed: _openAddRecipeSheet,
-          backgroundColor: Colors.deepOrange,
+        floatingActionButton: FloatingActionButton.extended(
+          onPressed: _triggerAddRecipeModal,
+          backgroundColor: AppTheme.primaryEmerald,
           foregroundColor: Colors.white,
-          tooltip: 'Add Recipe',
-          child: const Icon(Icons.add),
+          elevation: 3,
+          icon: const Icon(Icons.add_rounded),
+          label: const Text('New Recipe', style: TextStyle(fontWeight: FontWeight.bold)),
         ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyStatePlaceholder() {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: const Icon(
+              Icons.soup_kitchen_outlined,
+              size: 48,
+              color: Color(0xFF94A3B8),
+            ),
+          ),
+          const SizedBox(height: 14),
+          const Text(
+            'No recipes found',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF64748B),
+            ),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Add a recipe or adjust your filters',
+            style: TextStyle(fontSize: 13, color: Color(0xFF94A3B8)),
+          ),
+        ],
       ),
     );
   }

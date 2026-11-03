@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
+import '../core/theme/app_theme.dart';
 import '../core/utils/validators.dart';
-import '../services/auth_service.dart';
+import '../repositories/firebase_auth_repository.dart';
 import 'login_screen.dart';
 
-/// User Registration Screen for RecipeBox
+/// User Registration Interface for RecipeBox
 /// Author: Nguyen Vinh Phu (QE180136)
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -13,228 +14,236 @@ class RegisterScreen extends StatefulWidget {
 }
 
 class _RegisterScreenState extends State<RegisterScreen> {
-  final _registrationFormKey = GlobalKey<FormState>();
-  final _authService = AuthService();
+  final _signupFormKey = GlobalKey<FormState>();
+  final _authRepository = FirebaseAuthRepository();
 
-  final TextEditingController _emailController = TextEditingController();
-  final TextEditingController _passwordController = TextEditingController();
-  final TextEditingController _confirmPasswordController = TextEditingController();
+  final TextEditingController _emailFieldController = TextEditingController();
+  final TextEditingController _passwordFieldController = TextEditingController();
+  final TextEditingController _confirmPassFieldController = TextEditingController();
 
-  AutovalidateMode _validationMode = AutovalidateMode.disabled;
+  AutovalidateMode _validationPolicy = AutovalidateMode.disabled;
   bool _isRegistering = false;
-  String? _registrationError;
-  bool _hidePassword = true;
-  bool _hideConfirmPassword = true;
+  String? _serverErrorMessage;
+  bool _hideSecretKey = true;
+  bool _hideConfirmKey = true;
 
   @override
   void dispose() {
-    _emailController.dispose();
-    _passwordController.dispose();
-    _confirmPasswordController.dispose();
+    _emailFieldController.dispose();
+    _passwordFieldController.dispose();
+    _confirmPassFieldController.dispose();
     super.dispose();
   }
 
-  Future<void> _handleUserRegistration() async {
+  Future<void> _executeRegistration() async {
     setState(() {
-      _validationMode = AutovalidateMode.onUserInteraction;
-      _registrationError = null;
+      _validationPolicy = AutovalidateMode.onUserInteraction;
+      _serverErrorMessage = null;
     });
 
-    if (!_registrationFormKey.currentState!.validate()) {
+    if (!_signupFormKey.currentState!.validate()) {
       return;
     }
 
-    setState(() {
-      _isRegistering = true;
-    });
+    setState(() => _isRegistering = true);
 
-    try {
-      await _authService.registerWithEmailAndPassword(
-        email: _emailController.text.trim(),
-        password: _passwordController.text.trim(),
+    final outcome = await _authRepository.signUp(
+      email: _emailFieldController.text,
+      password: _passwordFieldController.text,
+    );
+
+    if (!mounted) return;
+
+    if (outcome.isSuccess) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Registration successful'),
+          backgroundColor: Color(0xFF16A34A),
+          duration: Duration(seconds: 4),
+          behavior: SnackBarBehavior.floating,
+        ),
       );
 
+      await Future.delayed(const Duration(milliseconds: 1800));
       if (mounted) {
-        // Show success snackbar according to exam specifications
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Registration successful'),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 4),
-          ),
-        );
-
-        await Future.delayed(const Duration(milliseconds: 2000));
-        if (mounted) {
-          Navigator.popUntil(context, (route) => route.isFirst);
-        }
+        Navigator.popUntil(context, (route) => route.isFirst);
       }
-    } catch (e) {
+    } else {
       setState(() {
-        _registrationError = e.toString().replaceFirst(RegExp(r'^\[.*?\]\s*'), '');
+        _serverErrorMessage = outcome.errorOrNull;
+        _isRegistering = false;
       });
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isRegistering = false;
-        });
-      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppTheme.surfaceCanvas,
       appBar: AppBar(
         title: const Text('Register'),
-        backgroundColor: Colors.deepOrange,
-        foregroundColor: Colors.white,
+        backgroundColor: AppTheme.primaryEmerald,
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 20.0),
-        child: Form(
-          key: _registrationFormKey,
-          autovalidateMode: _validationMode,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const SizedBox(height: 16),
-              const Text(
-                'Create Account',
-                style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.deepOrange,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Sign up to start organizing your private recipes',
-                style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
-              ),
-              const SizedBox(height: 28),
-
-              // Email Input Field
-              TextFormField(
-                controller: _emailController,
-                keyboardType: TextInputType.emailAddress,
-                decoration: const InputDecoration(
-                  labelText: 'Email',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.email_outlined),
-                ),
-                validator: RecipeValidators.validateEmail,
-              ),
-              const SizedBox(height: 18),
-
-              // Password Input Field
-              TextFormField(
-                controller: _passwordController,
-                obscureText: _hidePassword,
-                decoration: InputDecoration(
-                  labelText: 'Password',
-                  border: const OutlineInputBorder(),
-                  prefixIcon: const Icon(Icons.lock_outline),
-                  suffixIcon: IconButton(
-                    icon: Icon(_hidePassword ? Icons.visibility_off : Icons.visibility),
-                    onPressed: () {
-                      setState(() {
-                        _hidePassword = !_hidePassword;
-                      });
-                    },
-                  ),
-                ),
-                validator: RecipeValidators.validatePassword,
-              ),
-              const SizedBox(height: 18),
-
-              // Confirm Password Field
-              TextFormField(
-                controller: _confirmPasswordController,
-                obscureText: _hideConfirmPassword,
-                decoration: InputDecoration(
-                  labelText: 'Confirm Password',
-                  border: const OutlineInputBorder(),
-                  prefixIcon: const Icon(Icons.lock_reset_outlined),
-                  suffixIcon: IconButton(
-                    icon: Icon(_hideConfirmPassword ? Icons.visibility_off : Icons.visibility),
-                    onPressed: () {
-                      setState(() {
-                        _hideConfirmPassword = !_hideConfirmPassword;
-                      });
-                    },
-                  ),
-                ),
-                validator: (val) =>
-                    RecipeValidators.validateConfirmPassword(val, _passwordController.text),
-              ),
-              const SizedBox(height: 24),
-
-              // Register Submit Button
-              ElevatedButton(
-                onPressed: _isRegistering ? null : _handleUserRegistration,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.deepOrange,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-                child: _isRegistering
-                    ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Text('Register', style: TextStyle(fontSize: 16)),
-              ),
-
-              // Firebase Error Notice Banner
-              if (_registrationError != null) ...[
-                const SizedBox(height: 16),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.red.shade50,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.red.shade200),
-                  ),
-                  child: Text(
-                    _registrationError!,
-                    style: const TextStyle(color: Colors.red, fontSize: 14),
-                    textAlign: TextAlign.center,
-                  ),
+      body: Center(
+        child: SingleChildScrollView(
+          physics: const BouncingScrollPhysics(),
+          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 20.0),
+          child: Container(
+            padding: const EdgeInsets.all(24.0),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.04),
+                  blurRadius: 14,
+                  offset: const Offset(0, 6),
                 ),
               ],
-              const SizedBox(height: 24),
-
-              // Switch to Login Screen
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
+            ),
+            child: Form(
+              key: _signupFormKey,
+              autovalidateMode: _validationPolicy,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text('Already have an account? '),
-                  GestureDetector(
-                    onTap: () {
-                      Navigator.pushReplacement(
-                        context,
-                        MaterialPageRoute(builder: (_) => const LoginScreen()),
-                      );
-                    },
-                    child: const Text(
-                      'Login',
-                      style: TextStyle(
-                        color: Colors.deepOrange,
-                        fontWeight: FontWeight.bold,
+                  const Text(
+                    'Create Account',
+                    style: TextStyle(
+                      fontSize: 26,
+                      fontWeight: FontWeight.w800,
+                      color: AppTheme.primaryEmerald,
+                      letterSpacing: -0.5,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'Sign up to start organizing your private recipes',
+                    style: TextStyle(color: Color(0xFF64748B), fontSize: 14),
+                  ),
+                  const SizedBox(height: 26),
+
+                  // Email Input
+                  TextFormField(
+                    controller: _emailFieldController,
+                    keyboardType: TextInputType.emailAddress,
+                    decoration: const InputDecoration(
+                      labelText: 'Email',
+                      prefixIcon: Icon(Icons.alternate_email_rounded, size: 20),
+                    ),
+                    validator: RecipeValidators.validateEmail,
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Password Input
+                  TextFormField(
+                    controller: _passwordFieldController,
+                    obscureText: _hideSecretKey,
+                    decoration: InputDecoration(
+                      labelText: 'Password',
+                      prefixIcon: const Icon(Icons.lock_outline_rounded, size: 20),
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          _hideSecretKey ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                          size: 20,
+                        ),
+                        onPressed: () => setState(() => _hideSecretKey = !_hideSecretKey),
                       ),
                     ),
+                    validator: RecipeValidators.validatePassword,
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Confirm Password
+                  TextFormField(
+                    controller: _confirmPassFieldController,
+                    obscureText: _hideConfirmKey,
+                    decoration: InputDecoration(
+                      labelText: 'Confirm Password',
+                      prefixIcon: const Icon(Icons.lock_reset_rounded, size: 20),
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          _hideConfirmKey ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                          size: 20,
+                        ),
+                        onPressed: () => setState(() => _hideConfirmKey = !_hideConfirmKey),
+                      ),
+                    ),
+                    validator: (v) => RecipeValidators.validateConfirmPassword(
+                      v,
+                      _passwordFieldController.text,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+
+                  // Submit
+                  ElevatedButton(
+                    onPressed: _isRegistering ? null : _executeRegistration,
+                    child: _isRegistering
+                        ? const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Text('Register'),
+                  ),
+
+                  // Server Error Box
+                  if (_serverErrorMessage != null) ...[
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFEF2F2),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: const Color(0xFFFECACA)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.error_outline_rounded, color: Color(0xFFDC2626), size: 20),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              _serverErrorMessage!,
+                              style: const TextStyle(color: Color(0xFFDC2626), fontSize: 13),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+
+                  const SizedBox(height: 22),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Text(
+                        'Already have an account? ',
+                        style: TextStyle(color: Color(0xFF64748B), fontSize: 14),
+                      ),
+                      InkWell(
+                        onTap: () {
+                          Navigator.pushReplacement(
+                            context,
+                            MaterialPageRoute(builder: (_) => const LoginScreen()),
+                          );
+                        },
+                        child: const Text(
+                          'Login',
+                          style: TextStyle(
+                            color: AppTheme.primaryEmerald,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
-            ],
+            ),
           ),
         ),
       ),

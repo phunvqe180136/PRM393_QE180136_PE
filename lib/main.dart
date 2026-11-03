@@ -5,21 +5,20 @@ import 'core/theme/app_theme.dart';
 import 'firebase_options.dart';
 import 'screens/home_screen.dart';
 
-/// RecipeBox Application Entry Point
-/// Developed by Nguyen Vinh Phu (QE180136) for PRM393 Practical Exam
+/// Entry bootstrap sequence for RecipeBox
+/// Author: Nguyen Vinh Phu (QE180136)
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize Firebase client service
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  runApp(const RecipeBoxApp());
+  runApp(const _RecipeBoxApplicationRoot());
 }
 
-class RecipeBoxApp extends StatelessWidget {
-  const RecipeBoxApp({super.key});
+class _RecipeBoxApplicationRoot extends StatelessWidget {
+  const _RecipeBoxApplicationRoot();
 
   @override
   Widget build(BuildContext context) {
@@ -28,6 +27,12 @@ class RecipeBoxApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
       home: const HomeScreen(),
+      builder: (context, childWidget) {
+        return ScrollConfiguration(
+          behavior: const ScrollBehavior().copyWith(physics: const BouncingScrollPhysics()),
+          child: childWidget ?? const SizedBox.shrink(),
+        );
+      },
     );
   }
 }
